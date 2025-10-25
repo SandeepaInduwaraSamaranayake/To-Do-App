@@ -1,0 +1,51 @@
+services:
+  # 1. Database Service (PostgreSQL)
+  db:
+    image: postgres:16-alpine
+    container_name: todo_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: todo_db
+    ports:
+      - "5432:5432"
+    volumes:
+      # Initializes the database with the schema.sql script on first run
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      # Wait until PostgreSQL is ready before starting the API
+      test: ["CMD-SHELL", "pg_isready -U user -d todo_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Backend Service (FastAPI)
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: todo_api
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      # Database connection string pointing to the 'db' service name
+      DATABASE_URL: postgresql+psycopg2://user:password@db:5432/todo_db
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./backend:/app
+
+  # 3. Frontend Service (Nginx + React)
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: todo_web
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    restart: unless-stopped
